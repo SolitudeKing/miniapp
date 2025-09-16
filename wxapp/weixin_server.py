@@ -43,7 +43,7 @@ class Weixin:
 class Miniapp(Weixin):
 
     @classmethod
-    def loginVerify(cls, appid: str, secret: str, code: str) -> dict:
+    def loginVerify(cls, appid: str, secret: str, code: str, *args, **kwargs) -> dict:
         """"
         code:
         0       -> ok\n
