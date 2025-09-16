@@ -26,7 +26,7 @@ class Douyin:
         }
         headers = cls.headers
 
-        token_response = requests.post(token_url, headers=headers, params=token_params)
+        token_response = requests.post(token_url, headers=headers, json=token_params)
         token_data = token_response.json()
         errcode = token_data.get("err_no", -1)
         errmsg = token_data.get("err_tips")
@@ -92,7 +92,7 @@ class Miniapp(Douyin):
         if anonymous_code:
             verify_params["anonymous_code"] = anonymous_code
 
-        verify_response = requests.post(verify_url, headers=cls.headers, params=verify_params)
+        verify_response = requests.post(verify_url, headers=cls.headers, json=verify_params)
         verify_data = verify_response.json()
         errcode = verify_data.get("err_no", -1)
         errmsg = verify_data.get("err_tips")
