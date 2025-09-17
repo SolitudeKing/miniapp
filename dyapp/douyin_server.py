@@ -93,11 +93,11 @@ class Miniapp(Douyin):
             verify_params["anonymous_code"] = anonymous_code
 
         verify_response = requests.post(verify_url, headers=cls.headers, json=verify_params)
-        verify_data = verify_response.json()
-        errcode = verify_data.get("err_no", -1)
-        errmsg = verify_data.get("err_tips")
+        response_data = verify_response.json()
+        errcode = response_data.get("err_no", -1)
+        errmsg = response_data.get("err_tips")
         assert int(errcode) == 0, error_mapping.get(errcode, errmsg)
-
+        verify_data = response_data.get("data")
         return {
             "openid": verify_data.get("openid"),
             "unionid": verify_data.get("unionid", None),
