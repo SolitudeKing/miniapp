@@ -27,10 +27,11 @@ class Douyin:
         headers = cls.headers
 
         token_response = requests.post(token_url, headers=headers, json=token_params)
-        token_data = token_response.json()
-        errcode = token_data.get("err_no", -1)
-        errmsg = token_data.get("err_tips")
+        response_data = token_response.json()
+        errcode = response_data.get("err_no", -1)
+        errmsg = response_data.get("err_tips")
         assert int(errcode) == 0, error_mapping.get(errcode, errmsg)
+        token_data = response_data.get("data", {})
         return {
             "access_token": token_data.get("access_token", None),
             "expires_in": token_data.get("expires_in", None)
@@ -97,7 +98,7 @@ class Miniapp(Douyin):
         errcode = response_data.get("err_no", -1)
         errmsg = response_data.get("err_tips")
         assert int(errcode) == 0, error_mapping.get(errcode, errmsg)
-        verify_data = response_data.get("data")
+        verify_data = response_data.get("data", {})
         return {
             "openid": verify_data.get("openid"),
             "unionid": verify_data.get("unionid", None),
