@@ -114,7 +114,15 @@ class Miniapp(Weixin):
         }
 
     @classmethod
-    def sendSubscribeMsg(cls, access_token: str, openid: str, template_id: str, page: str, miniprogram_state: str, data: dict):
+    def sendSubscribeMsg(
+        cls,
+        access_token: str,
+        openid: str,
+        template_id: str,
+        page: str,
+        data: dict,
+        miniprogram_state: str = "formal"
+    ):
         """
         code:
         0       -> ok\n
