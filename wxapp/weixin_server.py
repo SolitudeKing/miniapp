@@ -1,4 +1,20 @@
+import os
+import time
+import json
+import random
+import string
+import base64
 import requests
+from datetime import datetime
+from urllib.parse import urlparse
+from cryptography import x509
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from cryptography.hazmat.backends import default_backend
+
+from ..utils.ids import UUID7Generator
 
 
 class Weixin:
@@ -155,3 +171,272 @@ class Miniapp(Weixin):
         errmsg = send_data.get("errmsg")
         assert int(errcode) == 0, error_mapping.get(errcode, errmsg)
         return send_data
+
+
+class WechatPayV3:
+    basedir = os.path.abspath(os.path.dirname(__file__))  # 获取当前目录
+
+    def __init__(self,
+                 app_id: str,
+                 mch_id: str,
+                 private_key: str,
+                 api_v3_key: str,
+                 serial_no: str,
+                 notify_url: str,
+                 private_key_password: str = None,
+                 certificates_path: str = None,
+                 ignore_resp_sign=False,
+                 ):
+        """
+        :param ignore_resp_sign: 是否忽略应答验签(用于第一次缓存证书)
+        """
+        self.app_id = app_id
+        self.mch_id = mch_id
+        self.private_key = private_key
+        self.private_key_password = private_key_password
+        self.api_v3_key = api_v3_key
+        self.serial_no = serial_no  # 证书序列号(微信支付商户平台获取)
+        self.ignore_resp_sign = ignore_resp_sign
+        self.notify_url = notify_url
+        self.certificates_path = certificates_path or os.path.join(self.basedir, "certificates.json")
+
+    def _auth(self, req: requests.Request):
+        """
+        ==构造签名串==\n
+        签名串一共有5个部分,每一行为一个参数。
+        结尾以\\n（换行符,ASCII编码值为0x0A）结束,包括最后一行。
+        如果参数本身以\\n结束,也需要附加一个\\n。
+        ```
+        HTTP请求方法\\n
+        URL\\n
+        请求时间戳\\n
+        请求随机串\\n
+        请求报文主体\\n
+        ```
+
+        """
+        # 1.获取HTTP请求的方法
+        data = req.method + "\n"
+        # 2.获取请求的绝对URL，请注意需要去除域名部分。
+        parsed = urlparse(req.url)
+        data += parsed.path
+        if parsed.query:
+            data += "?" + parsed.query
+        data += "\n"
+        # 3.获取请求时间戳
+        timestamp = str(int(time.time()))
+        data += timestamp + "\n"
+        # 4.生成一个请求随机串，推荐生成随机数算法如下：调用随机数函数生成，将得到的值转换为字符串。
+        nonce_str = "".join(random.sample(string.ascii_letters + string.digits, 32))
+        data += nonce_str + "\n"
+        # 5.获取请求报文主体
+        if req.data:
+            data += req.data
+        data += "\n"
+        # 6.构造签名串,计算签名
+        signature = self.sign(data)
+        # 7.构造请求头
+        # ==设置HTTP头==
+        authorization = ('WECHATPAY2-SHA256-RSA2048 '
+                         'mchid="{0}",nonce_str="{1}",'
+                         'signature="{2}",timestamp="{3}",'
+                         'serial_no="{4}"').format(self.mch_id,
+                                                   nonce_str,
+                                                   signature,
+                                                   timestamp,
+                                                   self.serial_no)
+        req.headers["Authorization"] = authorization
+        req.headers["Content-Type"] = "application/json"
+        req.headers["Accept"] = "application/json"
+        req.headers["User-Agent"] = "requests " + requests.__version__
+        r = req.prepare()
+        s = requests.Session()
+        resp = s.send(r, timeout=2)
+        # 验签
+        if not self.ignore_resp_sign:
+            nonce = resp.headers.get("Wechatpay-Nonce")
+            signature = resp.headers.get("Wechatpay-Signature")
+            serial = resp.headers.get("Wechatpay-Serial")
+            timestamp = resp.headers.get("Wechatpay-Timestamp")
+            body = resp.text
+            cer = self.getCertificateBySerialNO(serial)
+            ret = self.respSign(timestamp=timestamp,
+                                nonce=nonce,
+                                body=body,
+                                cer=cer,
+                                signature=signature)
+            assert ret is None, "resp sign error"
+
+        return resp
+
+    @classmethod
+    def genOutTradeNO(cls, trade_type="jsapi", nacl=None):
+        """
+        生成商户订单号
+        :param trade_type: 交易类型
+        :param nacl: 盐
+        """
+        datetime.now().timestamp()
+        out_trade_no = str(int(datetime.now().timestamp() * 10000)) + str(...)
+        out_trade_no = str(UUID7Generator.generate(methods="hex"))
+        # return out_trade_no[:32]
+        return out_trade_no
+
+    def paySign(self, prepay_id: str, nonce_str: str = None):
+        package = "prepay_id=" + prepay_id
+        sign_type = "RSA"
+        timestamp = int(time.time())
+        if not nonce_str:
+            nonce_str = "".join(random.sample(string.ascii_letters + string.digits, 32))
+        s = "{0}\n{1}\n{2}\n{3}\n".format(self.app_id, timestamp, nonce_str, package)
+        pay_sign = self.sign(s)
+        return dict(
+            app_id=self.app_id,
+            mch_id=self.mch_id,
+            timestamp=timestamp,
+            nonce_str=nonce_str,
+            prepay_id=prepay_id,
+            package=package,
+            sign_type=sign_type,
+            pay_sign=pay_sign
+        )
+
+    def sign(self, s: str):
+        """
+        签名串需经过SHA256withRSA签名后，再经过Base64编码
+        :param s: 待签名串
+        :param private_key: 私钥
+        :param private_key_password: 私钥密码,如果私钥有密码，请提供
+        """
+        # with open("./apiclient_key.pem", "r") as f:
+        #     api_client_key = f.read()
+        private_key = load_pem_private_key(
+            self.private_key.encode(),
+            password=self.private_key_password,
+            backend=default_backend()
+        )
+        signature = base64.b64encode(
+            private_key.sign(
+                s.encode(),
+                padding.PKCS1v15(),
+                hashes.SHA256()
+            ))
+        return signature.decode()
+
+    @classmethod
+    def respSign(cls, timestamp: str, nonce: str, body: str, cer: bytes, signature):
+        """
+        验签
+        :param timestamp: 时间戳
+        :param nonce: 随机字符串
+        :param body: 应答内容
+        """
+        # 加载证书
+        cert = x509.load_pem_x509_certificate(cer, default_backend())
+        # 获取公钥
+        public_key = cert.public_key()
+        # 验签
+
+        try:
+            signature = base64.b64decode(signature)
+            # s = timestamp + "\n" + nonce + "\n" + body + "\n"
+            s = "{0}\n{1}\n{2}\n".format(timestamp, nonce, body)
+            public_key.verify(
+                signature=signature,
+                data=s.encode(),
+                padding=padding.PKCS1v15(),
+                algorithm=hashes.SHA256()   # 指定哈希算法
+            )
+        except Exception as e:
+            return e.__str__()
+        return None
+
+    def getCertificates(self):
+        """下载证书"""
+        url = "https://api.mch.weixin.qq.com/v3/certificates"
+        req = requests.Request(method="GET", url=url)
+        response = self._auth(req=req)
+        result = response.json()
+        with open(self.certificates_path, "w+") as f:
+            f.write(json.dumps(result["data"], indent=4))
+        return result
+
+    def getCertificateBySerialNO(self, serial_no) -> bytes:
+        """读取缓存证书"""
+        if not os.path.exists(self.certificates_path):
+            raise FileNotFoundError("请先下载证书进行缓存")
+        with open(self.certificates_path, "r") as f:
+            content = f.read()
+        certificates = json.loads(content)
+        nonce, ciphertext, associated_data = None, None, None
+        for certificate in certificates:
+            if certificate["serial_no"] == serial_no:
+                nonce = certificate["encrypt_certificate"]["nonce"]
+                ciphertext = certificate["encrypt_certificate"]["ciphertext"]
+                associated_data = certificate["encrypt_certificate"]["associated_data"]
+                break
+        if ciphertext is None:
+            raise ValueError("certificate not found")
+        cer = self.decryptAesGcm(nonce=nonce,
+                                 ciphertext=ciphertext,
+                                 associated_data=associated_data)
+        return cer
+
+    def decryptAesGcm(self, nonce, ciphertext, associated_data) -> bytes:
+        aes_gcm = AESGCM(self.api_v3_key.encode())
+        plaintext = aes_gcm.decrypt(nonce=nonce.encode(),
+                                    associated_data=associated_data.encode(),
+                                    data=base64.b64decode(ciphertext))
+        return plaintext
+
+    def jsapiPay(
+            self,
+            openid,
+            price,
+
+            out_trade_no,
+            currency="CNY",
+            description="测试jsapi支付",
+
+            attach=None
+    ):
+        """
+        小程序支付
+        :param openid: 用户openid
+        :param price: 订单总金额，单位为分
+        :param out_trade_no: 商户订单号
+        :param description: 商品描述
+        :param attach: 商户数据包
+        """
+        url = "https://api.mch.weixin.qq.com/v3/pay/transactions/jsapi"
+        notify_url = self.notify_url
+        data = dict(appid=self.app_id,
+                    mchid=self.mch_id,
+                    description=description,
+                    notify_url=notify_url,
+                    out_trade_no=out_trade_no,
+                    amount=dict(total=price,
+                                currency=currency),
+                    payer=dict(openid=openid))
+        if attach is not None:
+            data["attach"] = attach
+        req = requests.Request(method="POST", url=url, data=json.dumps(data))
+        response = self._auth(req=req)
+        result = response.json()
+        # {"code": "PARAM_ERROR", "message": "无效的openid"}
+        {"prepay_id": "wx20151334596424dc845862de1d70960001"}
+        prepay_id = result["prepay_id"]
+        return prepay_id
+
+    def queryOrder(self, out_trade_no=None, transaction_id=None):
+        if out_trade_no is None and transaction_id is None:
+            raise ValueError("Param Error")
+        if out_trade_no is not None:
+            url = "https://api.mch.weixin.qq.com/v3/pay/transactions/out-trade-no/{0}".format(out_trade_no)
+        else:
+            url = "https://api.mch.weixin.qq.com/v3/pay/transactions/id/{0}".format(transaction_id)
+        url += "?" + "mchid=" + self.mch_id
+        req = requests.Request(method="GET", url=url)
+        response = self._auth(req=req)
+        result = response.json()
+        return result
