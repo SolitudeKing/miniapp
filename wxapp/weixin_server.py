@@ -173,6 +173,74 @@ class Miniapp(Weixin):
         return send_data
 
 
+class ServiceNumber(Weixin):
+    """
+    微信服务号
+    """
+    class CustomMessagBody:
+        ...
+
+    @classmethod
+    def loginVerify(cls, appid: str, secret: str, code: str):
+        """
+        AssertionError: msg
+        0       -> ok\n
+        40029   -> code无效\n
+        """
+        ...
+
+    @classmethod
+    def createQRCode(
+        cls,
+        access_token: str,
+        action_name: str,
+        scene_id: int = None,
+        scene_str: str = None,
+        expire_seconds: int = None
+    ) -> dict:
+        """
+        创建二维码ticket,用于生成带参数的二维码
+        ================================================================================================================
+        Args:
+            access_token: 微信公众号的access_token
+        :param scene_id: 场景值ID,临时二维码时为32位非0整型,永久二维码时最大值为100000（目前参数只支持1--100000）
+        :return: 返回的JSON数据包,包含ticket、expire_seconds、url
+        ===============================================================================================================
+        """
+        ...
+
+    @classmethod
+    def decryptMessage(
+        cls,
+        from_xml: str,
+        msg_sign: str,
+        timestamp: str,
+        nonce: str,
+        token: str,
+        encoding_aes_key: str
+    ) -> str:
+        """
+        解密消息
+
+        Args:
+            from_xml: XML
+            msg_sign: 签名串,对应URL参数的msg_signature
+            timestamp: 时间戳,对应URL参数的timestamp
+            nonce: 随机串,对应URL参数的nonce
+            token: 微信公众号平台设置的token
+            encoding_aes_key: 公众平台上,开发者设置的EncodingAESKey
+
+        Returns:
+            xml_content: 解密后的消息
+        """
+        ...
+
+    @classmethod
+    def sendCustomMessage(cls, openid: str, meg_body: CustomMessagBody):
+
+        ...
+
+
 class WechatPayV3:
     basedir = os.path.abspath(os.path.dirname(__file__))  # 获取当前目录
 
