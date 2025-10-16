@@ -7,6 +7,7 @@ from .dyapp.douyin_server import (
 
 from .wxapp.weixin_server import (
     Weixin,
+    ServiceNumber,
     WechatPayV3,
     Miniapp as WeixinMiniapp
 )
@@ -16,5 +17,7 @@ __all__ = [
     "Douyin",
     "DouyinMiniapp",
     "Weixin",
+    "ServiceNumber",
+    "WechatPayV3",
     "WeixinMiniapp"
 ]
