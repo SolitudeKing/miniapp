@@ -7,6 +7,7 @@ from .dyapp.douyin_server import (
 
 from .wxapp.weixin_server import (
     Weixin,
+    WechatPayV3,
     Miniapp as WeixinMiniapp
 )
 
