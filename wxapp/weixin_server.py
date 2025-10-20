@@ -487,7 +487,7 @@ class WechatPayV3:
                                 currency=currency),
                     payer=dict(openid=openid))
         if attach is not None:
-            data["attach"] = attach
+            data["attach"] = json.dumps(attach)
         req = requests.Request(method="POST", url=url, data=json.dumps(data))
         response = self._auth(req=req)
         result = response.json()
