@@ -211,6 +211,28 @@ class ServiceNumber(Weixin):
         ...
 
     @classmethod
+    def userBaseInfo(cls, access_token: str, openid: str, lang: str = "zh_CN") -> dict:
+        """
+        获取用户基本信息
+        """
+        error_mapping = {
+            40003: "openid 无效",
+            40001: "access_token 无效",
+            40013: "AppID无效错误",
+            0: "ok",
+            -1: "系统繁忙，请开发者稍候再试"
+
+        }
+        url = f"https://api.weixin.qq.com/cgi-bin/user/info?access_token={access_token}&openid={openid}&lang={lang}"
+
+        res = requests.get(url)
+        res_data = res.json()
+        errcode = res_data.get("errcode", 0)
+        errmsg = res_data.get("errmsg")
+        assert int(errcode) == 0, error_mapping.get(errcode, errmsg)
+        return res_data
+
+    @classmethod
     def createQRCode(
         cls,
         access_token: str,
