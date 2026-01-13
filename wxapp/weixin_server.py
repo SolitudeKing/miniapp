@@ -283,6 +283,48 @@ class ServiceNumber(Weixin):
 
         ...
 
+    @classmethod
+    def sendTemplateMessage(
+        cls,
+        appid: str,
+        access_token: str,
+        openid: str,
+        template_id: str,
+        data: dict,
+        url: str = None
+    ):
+        """
+        发送模板消息
+        """
+        error_mapping = {
+            -1: "系统繁忙，请开发者稍候再试",
+            0: "ok",
+            40013: "AppID无效错误",
+            40036: "不合法的 template_id 长度",
+            40037: "不合法的 template_id",
+            40039: "不合法的 URL 长度",
+        }
+        send_url = "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token={}".format(access_token)
+        req_data = {
+            "touser": openid,
+            "template_id": template_id,
+
+            "data": data
+        }
+        if url:
+            req_data["url"] = url
+            req_data["miniprogram"] = {
+                "appid": appid,
+                # "pagepath": "pages/index"
+            }
+        send_response = requests.post(send_url, json=req_data)
+
+        send_data = send_response.json()
+        errcode = send_data.get("errcode", 0)
+        errmsg = send_data.get("errmsg")
+        assert int(errcode) == 0, error_mapping.get(errcode, errmsg)
+        return send_data
+
 
 class WechatPayV3:
     basedir = os.path.abspath(os.path.dirname(__file__))  # 获取当前目录
