@@ -228,13 +228,13 @@ class ServiceNumber(Weixin):
             -1: "系统繁忙，此时请开发者稍候再试"
         }
         token_url = "https://api.weixin.qq.com/cgi-bin/stable_token"
-        token_params = {
+        _data = {
             "grant_type": "client_credential",
             "appid": appid,
             "secret": secret,
             "force_refresh": force_refresh
         }
-        token_response = requests.get(token_url, params=token_params)
+        token_response = requests.post(token_url, data=json.dumps(_data))
         token_data = token_response.json()
         errcode = token_data.get("errcode", 0)
         errmsg = token_data.get("errmsg")
