@@ -6,6 +6,7 @@ import string
 import base64
 import requests
 from datetime import datetime
+from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
@@ -21,6 +22,26 @@ class Weixin:
     headers = {
         "Content-Type": "application/json",
     }
+
+    @classmethod
+    def _parseXML2Dict(cls, element: BeautifulSoup) -> dict | str:
+        """
+        递归函数，将 BeautifulSoup 解析后的 XML 元素转换为字典
+        """
+        if element.string:  # 如果元素有直接内容，则直接返回
+            return element.string.strip()
+        result = {}
+        for child in element.children:
+            if child.name:  # 忽略注释和其他非标签元素
+                # 处理重复标签的情况
+                if child.name in result:
+                    # 如果已经存在同名标签，则将其转换为列表
+                    if not isinstance(result[child.name], list):
+                        result[child.name] = [result[child.name]]
+                    result[child.name].append(cls._parseXML2Dict(child))
+                else:
+                    result[child.name] = cls._parseXML2Dict(child)
+        return result
 
     @classmethod
     def getAccessToken(cls, appid: str, secret: str):
