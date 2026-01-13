@@ -211,6 +211,40 @@ class ServiceNumber(Weixin):
         ...
 
     @classmethod
+    def getAccessToken(cls, appid: str, secret: str, force_refresh: bool = False):
+        """
+        code:
+        0       -> ok\n
+        40029   -> js_code无效\n
+        45011   -> API 调用太频繁，请稍候再试\n
+        40226   -> 高风险等级用户，小程序登录拦截\n
+        -1      -> 系统繁忙，此时请开发者稍候再试\n
+        """
+        error_mapping = {
+            0: "ok",
+            40029: "js_code无效",
+            45011: "API 调用太频繁，请稍候再试",
+            40226: "高风险等级用户，小程序登录拦截",
+            -1: "系统繁忙，此时请开发者稍候再试"
+        }
+        token_url = "https://api.weixin.qq.com/cgi-bin/stable_token"
+        token_params = {
+            "grant_type": "client_credential",
+            "appid": appid,
+            "secret": secret,
+            "force_refresh": force_refresh
+        }
+        token_response = requests.get(token_url, params=token_params)
+        token_data = token_response.json()
+        errcode = token_data.get("errcode", 0)
+        errmsg = token_data.get("errmsg")
+        assert int(errcode) == 0, error_mapping.get(errcode, errmsg)
+        return {
+            "access_token": token_data.get("access_token", None),
+            "expires_in": token_data.get("expires_in", None)
+        }
+
+    @classmethod
     def userBaseInfo(cls, access_token: str, openid: str, lang: str = "zh_CN") -> dict:
         """
         获取用户基本信息
