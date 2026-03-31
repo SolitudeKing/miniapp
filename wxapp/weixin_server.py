@@ -5,6 +5,8 @@ import random
 import string
 import base64
 import requests
+import hmac
+import hashlib
 from datetime import datetime
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
@@ -18,7 +20,7 @@ from cryptography.hazmat.backends import default_backend
 from ..utils.ids import UUID7Generator
 
 
-class Weixin:
+class WechatMixin:
     headers = {
         "Content-Type": "application/json",
     }
@@ -77,7 +79,7 @@ class Weixin:
         }
 
 
-class Miniapp(Weixin):
+class Miniapp(WechatMixin):
 
     @classmethod
     def loginVerify(cls, appid: str, secret: str, code: str, *args, **kwargs) -> dict:
@@ -115,6 +117,27 @@ class Miniapp(Weixin):
             "unionid": verify_data.get("unionid", None),
             "session_key": verify_data.get("session_key")
         }
+
+    @classmethod
+    def checkSessionKey(cls, openid: str, session_key: str, access_token: str) -> bool:
+        """检查session_key是否有效"""
+        check_url = f"https://api.weixin.qq.com/wxa/checksession?access_token={access_token}"
+        signature = hmac.new(
+            key=session_key.encode("utf-8"),
+            msg="",
+            digestmod=hashlib.sha256
+        ).hexdigest()
+        check_params = {
+            "openid": openid,
+            "signature": signature,
+            "sig_method": "hmac_sha256"
+        }
+        check_response = requests.get(check_url, params=check_params)
+        check_data = check_response.json()
+        errcode = check_data.get("errcode", 0)
+        if int(errcode) != 0:  # 登录态校验失败
+            return False
+        return True
 
     @classmethod
     def getPhoneNumber(cls, access_token: str, code: str) -> dict:
@@ -194,7 +217,7 @@ class Miniapp(Weixin):
         return send_data
 
 
-class ServiceNumber(Weixin):
+class ServiceNumber(WechatMixin):
     """
     微信服务号
     """
